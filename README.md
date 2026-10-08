@@ -1,4 +1,4 @@
-# Billing Finder
+# Cost Compass
 
 Find a cost center or budget in a GitHub Enterprise without paging through 15+ pages.
 
