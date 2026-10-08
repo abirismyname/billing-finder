@@ -1,71 +1,133 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Billing Finder</title>
+<!-- ponytail: Primer CSS from CDN = GitHub look with zero build. Self-host if offline use matters. -->
+<link rel="stylesheet" href="https://unpkg.com/@primer/css@21.5.1/dist/primer.css">
 <style>
-  :root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
-  body { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
-  form, .bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
-  input, select, button { font: inherit; padding: .4rem .6rem; }
-  #q { flex: 1; min-width: 200px; }
-  [role=tablist] button[aria-selected=true] { font-weight: bold; border-bottom: 2px solid #f78166; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #8884; }
-  th button { all: unset; cursor: pointer; font-weight: bold; }
-  td.num, th.num { text-align: right; }
-  .err { color: #e5534b; }
-  .muted { opacity: .7; }
+  th button { all: unset; cursor: pointer; font-weight: 600; }
+  th button:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); }
+  .bf-table { width: 100%; border-collapse: collapse; }
+  .bf-table th, .bf-table td { padding: 8px 16px; border-top: 1px solid var(--borderColor-muted, #d0d7de); text-align: left; vertical-align: middle; }
+  .bf-table thead th { border-top: 0; background: var(--bgColor-muted, #f6f8fa); font-size: 12px; color: var(--fgColor-muted); white-space: nowrap; }
+  .bf-table tbody tr:hover { background: var(--bgColor-muted, #f6f8fa); }
+  .bf-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bf-bar { width: 120px; display: inline-flex; vertical-align: middle; }
 </style>
 </head>
 <body>
-<h1>Billing Finder</h1>
-<form id="login">
-  <label>Enterprise slug <input id="slug" required autocomplete="off"></label>
-  <label>PAT <input id="pat" type="password" required autocomplete="off"></label>
-  <button>Load</button>
-  <span id="status" role="status"></span>
-</form>
+<header class="Header">
+  <div class="Header-item">
+    <svg height="32" viewBox="0 0 16 16" width="32" aria-hidden="true" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+  </div>
+  <div class="Header-item Header-item--full f4 text-bold">Billing Finder</div>
+  <div class="Header-item" id="ent-label" hidden>
+    <span class="mr-2" id="ent-name"></span>
+    <button class="btn btn-sm" id="change">Change</button>
+  </div>
+</header>
 
-<main id="app" hidden>
-  <div role="tablist">
-    <button role="tab" data-tab="cc" aria-selected="true">Cost centers (<span id="n-cc">0</span>)</button>
-    <button role="tab" data-tab="b" aria-selected="false">Budgets (<span id="n-b">0</span>)</button>
-  </div>
-  <div class="bar">
-    <input id="q" type="search" placeholder="Filter… (press / to focus)" aria-label="Filter">
-    <span id="filters"></span>
-    <span id="count" class="muted"></span>
-  </div>
-  <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
-</main>
+<div class="container-lg px-3 py-5">
+  <section id="login-view" class="col-md-6 mx-auto">
+    <h1 class="h2 mb-2">Find a cost center or budget</h1>
+    <p class="color-fg-muted mb-4">Search, filter and sort every cost center and budget in your enterprise on one page, without clicking through pages of results.</p>
+    <form id="login" class="Box p-4">
+      <div class="form-group mt-0">
+        <div class="form-group-header"><label for="slug">Enterprise slug</label></div>
+        <div class="form-group-body">
+          <input id="slug" class="form-control input-block" required autocomplete="off" spellcheck="false" placeholder="octodemo">
+          <p class="note">The part after <code>github.com/enterprises/</code> in your enterprise URL.</p>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-group-header"><label for="pat">Personal access token</label></div>
+        <div class="form-group-body">
+          <input id="pat" type="password" class="form-control input-block" required autocomplete="off" placeholder="ghp_…">
+          <p class="note">Classic PAT with <code>manage_billing:enterprise</code>. You must be an enterprise owner or billing manager.</p>
+        </div>
+      </div>
+      <div class="flash flash-error mb-3" id="error" role="alert" hidden></div>
+      <button class="btn btn-primary btn-block" id="load">Load billing data</button>
+    </form>
+    <div class="flash mt-3">
+      <strong>No data is stored.</strong> Your token and billing data stay in this browser tab's memory and are cleared when you close or reload it. Requests go directly from your browser to <code>api.github.com</code>. There's no server, cookie, local storage or analytics.
+    </div>
+  </section>
+
+  <main id="app" hidden>
+    <nav class="UnderlineNav mb-3" aria-label="Billing">
+      <div class="UnderlineNav-body" role="tablist">
+        <button class="UnderlineNav-item" role="tab" data-tab="cc" aria-selected="true">Cost centers <span class="Counter" id="n-cc">0</span></button>
+        <button class="UnderlineNav-item" role="tab" data-tab="b" aria-selected="false">Budgets <span class="Counter" id="n-b">0</span></button>
+      </div>
+    </nav>
+    <div class="d-flex flex-wrap flex-items-center mb-3" style="gap:8px">
+      <input id="q" type="search" class="form-control flex-auto" style="min-width:240px" placeholder="Filter by name, user, SKU…  (press / to focus)" aria-label="Filter">
+      <span id="filters" class="d-flex flex-wrap" style="gap:8px"></span>
+    </div>
+    <div class="Box">
+      <div class="Box-header"><h2 class="Box-title" id="count"></h2></div>
+      <div class="overflow-x-auto">
+        <table class="bf-table"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+      </div>
+      <div class="blankslate" id="empty" hidden><h3 class="blankslate-heading">No matches</h3><p>Try a different filter.</p></div>
+    </div>
+    <p class="note text-center mt-3">No data is stored. Everything stays in this tab's memory.</p>
+  </main>
+</div>
 
 <script src="lib.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const API = 'https://api.github.com';
 const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
-let slug, data = { cc: [], b: [] }, tab = 'cc', sort = 'name', dir = 1, filters = {};
+const nice = (s) => String(s).replace(/_/g, ' ').replace(/\bai\b/gi, 'AI').replace(/^\w/, (c) => c.toUpperCase());
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let slug, token, data = { cc: [], b: [] }, tab = 'cc', sort = 'name', dir = 1, filters = {};
 
-// Column defs per tab: [key, label, render?, numeric?]
+const label = (text, cls = '') => el('span', `Label ${cls} mr-1`, text);
+const progress = (pct) => {
+  const wrap = el('span', 'Progress bf-bar mr-2');
+  const bar = el('span', `Progress-item ${pct >= 1 ? 'color-bg-danger-emphasis' : pct >= .75 ? 'color-bg-attention-emphasis' : 'color-bg-success-emphasis'}`);
+  bar.style.width = Math.min(100, pct * 100) + '%';
+  wrap.append(bar); return wrap;
+};
+
+// Column defs: [sortKey, label, render(row) -> string|Node, numeric?]
 const cols = {
-  cc: [['name', 'Name'], ['state', 'State'], ['types', 'Resource types', (r) => r.types.join(', ')],
-       ['resources', 'Resources', null, true], ['azure', 'Azure subscription']],
-  b: [['name', 'Name'], ['scope', 'Scope'], ['sku', 'SKU'], ['stop', 'Stop usage'],
-      ['spent', 'Spent', (r) => money(r.spent), true], ['amount', 'Budget', (r) => money(r.amount), true],
-      ['pct', '% used', (r) => (r.pct * 100).toFixed(1) + '%', true]],
+  cc: [
+    ['name', 'Name'],
+    ['state', 'State', (r) => label(nice(r.state), r.state === 'active' ? 'Label--success' : 'Label--secondary')],
+    ['types', 'Resources', (r) => { const f = document.createDocumentFragment(); r.types.forEach((t) => f.append(label(nice(t)))); return f; }],
+    ['resources', 'Count', null, true],
+    ['azure', 'Azure subscription', (r) => el('span', 'color-fg-muted', r.azure || '—')],
+  ],
+  b: [
+    ['name', 'Name'],
+    ['scope', 'Scope', (r) => label(nice(r.scope))],
+    ['sku', 'SKU / product', (r) => nice(r.sku)],
+    ['stop', 'Stop usage', (r) => label(r.stop === 'yes' ? 'Yes' : 'No', r.stop === 'yes' ? 'Label--accent' : '')],
+    ['spent', 'Spent', (r) => money(r.spent), true],
+    ['amount', 'Budget', (r) => money(r.amount), true],
+    ['pct', 'Used', (r) => { const f = document.createDocumentFragment(); f.append(progress(r.pct), (r.pct * 100).toFixed(1) + '%'); return f; }, true],
+  ],
 };
 const filterKeys = { cc: ['state', 'types'], b: ['scope', 'sku', 'stop'] };
 const link = (r) => `https://github.com/enterprises/${encodeURIComponent(slug)}/billing/` +
   (tab === 'cc' ? `cost_centers/${encodeURIComponent(r.id)}` : `budgets/${encodeURIComponent(r.id)}/edit`);
 
-async function fetchAll(path, key, token) {
+async function fetchAll(path, key) {
   const out = [];
   for (let page = 1; page < 1000; page++) {
     const res = await fetch(`${API}${path}?per_page=100&page=${page}`, { headers: {
       Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' } });
-    if (!res.ok) throw new Error(`${path}: ${res.status} ${(await res.json().catch(() => ({}))).message || res.statusText}`);
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({}))).message || res.statusText;
+      const hint = { 401: 'Check that the token is valid.', 403: 'The token needs manage_billing:enterprise, and you must be an owner or billing manager.', 404: 'Check the enterprise slug.' }[res.status] || '';
+      throw new Error(`${res.status} ${msg}. ${hint}`);
+    }
     const body = await res.json();
     const items = body[key] || [];
     out.push(...items);
@@ -76,30 +138,38 @@ async function fetchAll(path, key, token) {
 
 $('#login').onsubmit = async (e) => {
   e.preventDefault();
-  slug = $('#slug').value.trim();
-  const token = $('#pat').value.trim();
+  slug = $('#slug').value.trim(); token = $('#pat').value.trim();
   const base = `/enterprises/${encodeURIComponent(slug)}/settings/billing`;
-  $('#status').className = ''; $('#status').textContent = 'Loading…';
+  $('#error').hidden = true; $('#load').disabled = true; $('#load').textContent = 'Loading…';
   try {
-    const [cc, b] = await Promise.all([fetchAll(`${base}/cost-centers`, 'costCenters', token), fetchAll(`${base}/budgets`, 'budgets', token)]);
+    const [cc, b] = await Promise.all([fetchAll(`${base}/cost-centers`, 'costCenters'), fetchAll(`${base}/budgets`, 'budgets')]);
     data = { cc: cc.map(ccRow), b: b.map(budgetRow) };
     $('#n-cc').textContent = data.cc.length; $('#n-b').textContent = data.b.length;
-    $('#status').textContent = ''; $('#app').hidden = false; setTab(tab);
+    $('#ent-name').textContent = slug; $('#ent-label').hidden = false;
+    $('#login-view').hidden = true; $('#app').hidden = false; $('#q').value = ''; setTab(tab); $('#q').focus();
   } catch (err) {
-    $('#status').className = 'err'; $('#status').textContent = err.message;
+    $('#error').textContent = err.message; $('#error').hidden = false;
+  } finally {
+    $('#load').disabled = false; $('#load').textContent = 'Load billing data';
   }
+};
+
+$('#change').onclick = () => {
+  token = null; data = { cc: [], b: [] }; $('#pat').value = '';
+  $('#app').hidden = true; $('#ent-label').hidden = true; $('#login-view').hidden = false; $('#pat').focus();
 };
 
 function setTab(t) {
   tab = t; sort = 'name'; dir = 1; filters = {};
   document.querySelectorAll('[role=tab]').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === t));
   const box = $('#filters'); box.replaceChildren();
+  const names = { state: 'State', types: 'Resource', scope: 'Scope', sku: 'SKU', stop: 'Stop usage' };
   for (const k of filterKeys[t]) {
     const vals = [...new Set(data[t].flatMap((r) => r[k]))].sort();
-    const sel = document.createElement('select');
-    sel.setAttribute('aria-label', k);
-    sel.add(new Option(`${k}: any`, ''));
-    vals.forEach((v) => sel.add(new Option(v, v)));
+    const sel = el('select', 'form-select');
+    sel.setAttribute('aria-label', names[k]);
+    sel.add(new Option(`${names[k]}: All`, ''));
+    vals.forEach((v) => sel.add(new Option(nice(v), v)));
     sel.onchange = () => { filters[k] = sel.value; render(); };
     box.append(sel);
   }
@@ -107,35 +177,38 @@ function setTab(t) {
 }
 
 function render() {
-  const tr = document.createElement('tr');
-  for (const [k, label, , num] of cols[tab]) {
-    const th = document.createElement('th'); if (num) th.className = 'num';
-    const b = document.createElement('button');
-    b.textContent = label + (sort === k ? (dir > 0 ? ' ▲' : ' ▼') : '');
+  const tr = el('tr');
+  for (const [k, text, , num] of cols[tab]) {
+    const th = el('th', num ? 'num' : '');
+    const b = el('button', '', text + (sort === k ? (dir > 0 ? ' ↑' : ' ↓') : ''));
     b.onclick = () => { dir = sort === k ? -dir : (num ? -1 : 1); sort = k; render(); };
     th.setAttribute('aria-sort', sort === k ? (dir > 0 ? 'ascending' : 'descending') : 'none');
     th.append(b); tr.append(th);
   }
   $('#thead').replaceChildren(tr);
-  const rows = apply(data[tab], { q: $('#q').value, filters, sort, dir });
+  const rows = apply(data[tab], { q: $('#q').value, filters, sort: sort === 'types' ? 'resources' : sort, dir });
   $('#tbody').replaceChildren(...rows.map((r) => {
-    const tr = document.createElement('tr');
+    const tr = el('tr');
     cols[tab].forEach(([k, , fmt, num], i) => {
-      const td = document.createElement('td'); if (num) td.className = 'num';
-      const text = fmt ? fmt(r) : r[k];
-      if (i === 0) { const a = document.createElement('a'); a.href = link(r); a.target = '_blank'; a.rel = 'noopener'; a.textContent = text || '(unnamed)'; td.append(a); }
-      else td.textContent = text;
+      const td = el('td', num ? 'num' : '');
+      if (i === 0) {
+        const a = el('a', 'Link--primary text-bold', r.name || '(unnamed)');
+        a.href = link(r); a.target = '_blank'; a.rel = 'noopener';
+        td.append(a);
+      } else td.append(fmt ? fmt(r) : r[k]);
       tr.append(td);
     });
     return tr;
   }));
-  $('#count').textContent = `${rows.length} of ${data[tab].length}`;
+  $('#empty').hidden = rows.length > 0;
+  const what = tab === 'cc' ? 'cost centers' : 'budgets';
+  $('#count').textContent = rows.length === data[tab].length ? `${rows.length} ${what}` : `${rows.length} of ${data[tab].length} ${what}`;
 }
 
 $('#q').oninput = render;
 document.querySelectorAll('[role=tab]').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
 document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && !$('#app').hidden && !/INPUT|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
+  if (e.key === '/' && !$('#app').hidden && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
   if (e.key === 'Escape' && document.activeElement === $('#q')) { $('#q').value = ''; render(); }
 });
 </script>

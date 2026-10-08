@@ -13,7 +13,9 @@ Find a cost center or budget in a GitHub Enterprise without paging through 15+ p
 
 You need to be an enterprise owner or billing manager. Use a classic PAT with `manage_billing:enterprise` (or `admin:enterprise`).
 
-The token stays in your browser. It is sent only to `api.github.com` and isn't saved anywhere.
+## No data is stored
+
+Your token and billing data stay in your browser tab's memory and are cleared when you close or reload it. Requests go directly from your browser to `api.github.com`. There's no server, cookie, local storage or analytics.
 
 ## Develop
 
