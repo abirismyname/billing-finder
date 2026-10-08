@@ -1,0 +1,20 @@
+# Billing Finder
+
+Find a cost center or budget in a GitHub Enterprise without paging through 15+ pages.
+
+**Use it:** https://abirismyname.github.io/billing-finder/
+
+1. Enter your enterprise slug and a personal access token.
+2. Switch between **Cost centers** and **Budgets**.
+3. Type to filter (press `/` to focus, `Esc` to clear), narrow with the dropdowns, and click column headers to sort.
+4. Click a name to open it on GitHub.
+
+## Token
+
+You need to be an enterprise owner or billing manager. Use a classic PAT with `manage_billing:enterprise` (or `admin:enterprise`).
+
+The token stays in your browser. It is sent only to `api.github.com` and isn't saved anywhere.
+
+## Develop
+
+Static files, no build. Run `python3 -m http.server` to serve locally. Run `node test.js` to check the filter and sort logic.

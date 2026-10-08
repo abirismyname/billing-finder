@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing Finder</title>
+<style>
+  :root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+  body { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+  form, .bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  input, select, button { font: inherit; padding: .4rem .6rem; }
+  #q { flex: 1; min-width: 200px; }
+  [role=tablist] button[aria-selected=true] { font-weight: bold; border-bottom: 2px solid #f78166; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #8884; }
+  th button { all: unset; cursor: pointer; font-weight: bold; }
+  td.num, th.num { text-align: right; }
+  .err { color: #e5534b; }
+  .muted { opacity: .7; }
+</style>
+</head>
+<body>
+<h1>Billing Finder</h1>
+<form id="login">
+  <label>Enterprise slug <input id="slug" required autocomplete="off"></label>
+  <label>PAT <input id="pat" type="password" required autocomplete="off"></label>
+  <button>Load</button>
+  <span id="status" role="status"></span>
+</form>
+
+<main id="app" hidden>
+  <div role="tablist">
+    <button role="tab" data-tab="cc" aria-selected="true">Cost centers (<span id="n-cc">0</span>)</button>
+    <button role="tab" data-tab="b" aria-selected="false">Budgets (<span id="n-b">0</span>)</button>
+  </div>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Filter… (press / to focus)" aria-label="Filter">
+    <span id="filters"></span>
+    <span id="count" class="muted"></span>
+  </div>
+  <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+</main>
+
+<script src="lib.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const API = 'https://api.github.com';
+const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+let slug, data = { cc: [], b: [] }, tab = 'cc', sort = 'name', dir = 1, filters = {};
+
+// Column defs per tab: [key, label, render?, numeric?]
+const cols = {
+  cc: [['name', 'Name'], ['state', 'State'], ['types', 'Resource types', (r) => r.types.join(', ')],
+       ['resources', 'Resources', null, true], ['azure', 'Azure subscription']],
+  b: [['name', 'Name'], ['scope', 'Scope'], ['sku', 'SKU'], ['stop', 'Stop usage'],
+      ['spent', 'Spent', (r) => money(r.spent), true], ['amount', 'Budget', (r) => money(r.amount), true],
+      ['pct', '% used', (r) => (r.pct * 100).toFixed(1) + '%', true]],
+};
+const filterKeys = { cc: ['state', 'types'], b: ['scope', 'sku', 'stop'] };
+const link = (r) => `https://github.com/enterprises/${encodeURIComponent(slug)}/billing/` +
+  (tab === 'cc' ? `cost_centers/${encodeURIComponent(r.id)}` : `budgets/${encodeURIComponent(r.id)}/edit`);
+
+async function fetchAll(path, key, token) {
+  const out = [];
+  for (let page = 1; page < 1000; page++) {
+    const res = await fetch(`${API}${path}?per_page=100&page=${page}`, { headers: {
+      Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' } });
+    if (!res.ok) throw new Error(`${path}: ${res.status} ${(await res.json().catch(() => ({}))).message || res.statusText}`);
+    const body = await res.json();
+    const items = body[key] || [];
+    out.push(...items);
+    if (!items.length || !(body.has_next_page || /rel="next"/.test(res.headers.get('link') || ''))) break;
+  }
+  return out;
+}
+
+$('#login').onsubmit = async (e) => {
+  e.preventDefault();
+  slug = $('#slug').value.trim();
+  const token = $('#pat').value.trim();
+  const base = `/enterprises/${encodeURIComponent(slug)}/settings/billing`;
+  $('#status').className = ''; $('#status').textContent = 'Loading…';
+  try {
+    const [cc, b] = await Promise.all([fetchAll(`${base}/cost-centers`, 'costCenters', token), fetchAll(`${base}/budgets`, 'budgets', token)]);
+    data = { cc: cc.map(ccRow), b: b.map(budgetRow) };
+    $('#n-cc').textContent = data.cc.length; $('#n-b').textContent = data.b.length;
+    $('#status').textContent = ''; $('#app').hidden = false; setTab(tab);
+  } catch (err) {
+    $('#status').className = 'err'; $('#status').textContent = err.message;
+  }
+};
+
+function setTab(t) {
+  tab = t; sort = 'name'; dir = 1; filters = {};
+  document.querySelectorAll('[role=tab]').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === t));
+  const box = $('#filters'); box.replaceChildren();
+  for (const k of filterKeys[t]) {
+    const vals = [...new Set(data[t].flatMap((r) => r[k]))].sort();
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', k);
+    sel.add(new Option(`${k}: any`, ''));
+    vals.forEach((v) => sel.add(new Option(v, v)));
+    sel.onchange = () => { filters[k] = sel.value; render(); };
+    box.append(sel);
+  }
+  render();
+}
+
+function render() {
+  const tr = document.createElement('tr');
+  for (const [k, label, , num] of cols[tab]) {
+    const th = document.createElement('th'); if (num) th.className = 'num';
+    const b = document.createElement('button');
+    b.textContent = label + (sort === k ? (dir > 0 ? ' ▲' : ' ▼') : '');
+    b.onclick = () => { dir = sort === k ? -dir : (num ? -1 : 1); sort = k; render(); };
+    th.setAttribute('aria-sort', sort === k ? (dir > 0 ? 'ascending' : 'descending') : 'none');
+    th.append(b); tr.append(th);
+  }
+  $('#thead').replaceChildren(tr);
+  const rows = apply(data[tab], { q: $('#q').value, filters, sort, dir });
+  $('#tbody').replaceChildren(...rows.map((r) => {
+    const tr = document.createElement('tr');
+    cols[tab].forEach(([k, , fmt, num], i) => {
+      const td = document.createElement('td'); if (num) td.className = 'num';
+      const text = fmt ? fmt(r) : r[k];
+      if (i === 0) { const a = document.createElement('a'); a.href = link(r); a.target = '_blank'; a.rel = 'noopener'; a.textContent = text || '(unnamed)'; td.append(a); }
+      else td.textContent = text;
+      tr.append(td);
+    });
+    return tr;
+  }));
+  $('#count').textContent = `${rows.length} of ${data[tab].length}`;
+}
+
+$('#q').oninput = render;
+document.querySelectorAll('[role=tab]').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && !$('#app').hidden && !/INPUT|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
+  if (e.key === 'Escape' && document.activeElement === $('#q')) { $('#q').value = ''; render(); }
+});
+</script>
+</body>
+</html>
