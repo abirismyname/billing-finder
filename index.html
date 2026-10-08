@@ -15,6 +15,11 @@
   .bf-table tbody tr:hover { background: var(--bgColor-muted, #f6f8fa); }
   .bf-table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .bf-bar { width: 120px; display: inline-flex; vertical-align: middle; }
+  .bf-table a { text-decoration: underline; text-underline-offset: 2px; }
+  .bf-table summary { cursor: pointer; }
+  .bf-members { max-height: 320px; overflow: auto; columns: 3 220px; margin-top: 8px; }
+  .bf-members h4 { column-span: all; font-size: 12px; margin: 8px 0 4px; color: var(--fgColor-muted); }
+  .bf-members li { list-style: none; break-inside: avoid; padding: 2px 0; }
 </style>
 </head>
 <body>
@@ -64,7 +69,7 @@
       </div>
     </nav>
     <div class="d-flex flex-wrap flex-items-center mb-3" style="gap:8px">
-      <input id="q" type="search" class="form-control flex-auto" style="min-width:240px" placeholder="Filter by name, user, SKU…  (press / to focus)" aria-label="Filter">
+      <input id="q" type="search" class="form-control flex-auto" style="min-width:240px" placeholder="Filter by name, org, team, user, SKU…  (press / to focus)" aria-label="Filter">
       <span id="filters" class="d-flex flex-wrap" style="gap:8px"></span>
     </div>
     <div class="Box">
@@ -83,11 +88,59 @@
 const $ = (s) => document.querySelector(s);
 const API = 'https://api.github.com';
 const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
-const nice = (s) => String(s).replace(/_/g, ' ').replace(/\bai\b/gi, 'AI').replace(/^\w/, (c) => c.toUpperCase());
+const TYPE = { Org: 'Organization', Repo: 'Repository', Team: 'Enterprise team', User: 'User' };
+const nice = (s) => TYPE[s] || String(s).replace(/_/g, ' ').replace(/\bai\b/gi, 'AI').replace(/^\w/, (c) => c.toUpperCase());
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let ccRes = new Map(), ccByName = new Map(); // id -> resources, name -> id
 let slug, token, data = { cc: [], b: [] }, tab = 'cc', sort = 'name', dir = 1, filters = {};
 
 const label = (text, cls = '') => el('span', `Label ${cls} mr-1`, text);
+const a = (text, href, cls = '') => { const x = el('a', cls, text); x.href = href; x.target = '_blank'; x.rel = 'noopener'; return x; };
+const gh = (path) => 'https://github.com/' + path.split('/').map(encodeURIComponent).join('/');
+const ent = (path = '') => gh(`enterprises/${slug}${path}`);
+const ccUrl = (id) => ent(`/billing/cost_centers/${id}`);
+// ponytail: team UI slug = API name minus "ent:" prefix
+const resUrl = ({ type, name }) => type === 'Team' ? ent(`/teams/${name.replace(/^ent:/, '')}`) : gh(name);
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+function membersCell(r) {
+  const res = ccRes.get(r.id) || [];
+  if (!res.length) return el('span', 'color-fg-muted', 'None');
+  const groups = Object.groupBy(res, (x) => x.type);
+  const d = el('details');
+  d.append(el('summary', 'Link--secondary', Object.entries(groups).map(([t, xs]) => plural(xs.length, nice(t))).join(' · ')));
+  d.ontoggle = () => { // render lazily: some cost centers have 1000s of users
+    if (!d.open || d.querySelector('.bf-members')) return;
+    const box = el('ul', 'bf-members');
+    for (const [t, xs] of Object.entries(groups)) {
+      box.append(el('h4', '', plural(xs.length, nice(t))));
+      xs.sort((x, y) => x.name.localeCompare(y.name)).forEach((x) => { const li = el('li'); li.append(a(x.name, resUrl(x))); box.append(li); });
+    }
+    d.append(box);
+  };
+  return d;
+}
+
+function budgetName(r) {
+  const f = el('div');
+  f.append(el('div', 'f6 color-fg-muted', nice(r.scope)));
+  const id = ccByName.get(r.name);
+  const href = { user: gh(r.name), organization: gh(r.name), repository: gh(r.name), enterprise: ent(), multi_user_customer: ent() }[r.scope]
+    ?? (id ? ccUrl(id) : null);
+  f.append(href ? a(r.name, href, 'Link--primary text-bold') : el('span', 'text-bold', r.name || '(unnamed)'));
+  if (id) {
+    const btn = el('button', 'btn-link f6 ml-2', 'Show members');
+    btn.onclick = () => drill(r.name);
+    f.append(btn);
+  }
+  return f;
+}
+
+function drill(name) { // budget -> its cost center, expanded
+  setTab('cc'); $('#q').value = name; render();
+  const row = [...$('#tbody').rows].find((tr) => tr.cells[0].textContent === name);
+  const d = row?.querySelector('details'); if (d) { d.open = true; row.scrollIntoView({ block: 'center' }); }
+}
 const progress = (pct) => {
   const wrap = el('span', 'Progress bf-bar mr-2');
   const bar = el('span', `Progress-item ${pct >= 1 ? 'color-bg-danger-emphasis' : pct >= .75 ? 'color-bg-attention-emphasis' : 'color-bg-success-emphasis'}`);
@@ -98,25 +151,22 @@ const progress = (pct) => {
 // Column defs: [sortKey, label, render(row) -> string|Node, numeric?]
 const cols = {
   cc: [
-    ['name', 'Name'],
+    ['name', 'Name', (r) => a(r.name || '(unnamed)', ccUrl(r.id), 'Link--primary text-bold')],
     ['state', 'State', (r) => label(nice(r.state), r.state === 'active' ? 'Label--success' : 'Label--secondary')],
-    ['types', 'Resources', (r) => { const f = document.createDocumentFragment(); r.types.forEach((t) => f.append(label(nice(t)))); return f; }],
-    ['resources', 'Count', null, true],
+    ['resources', 'Members', membersCell],
     ['azure', 'Azure subscription', (r) => el('span', 'color-fg-muted', r.azure || '—')],
   ],
   b: [
-    ['name', 'Name'],
-    ['scope', 'Scope', (r) => label(nice(r.scope))],
+    ['name', 'Applies to', budgetName],
     ['sku', 'SKU / product', (r) => nice(r.sku)],
     ['stop', 'Stop usage', (r) => label(r.stop === 'yes' ? 'Yes' : 'No', r.stop === 'yes' ? 'Label--accent' : '')],
     ['spent', 'Spent', (r) => money(r.spent), true],
     ['amount', 'Budget', (r) => money(r.amount), true],
     ['pct', 'Used', (r) => { const f = document.createDocumentFragment(); f.append(progress(r.pct), (r.pct * 100).toFixed(1) + '%'); return f; }, true],
+    ['id', '', (r) => a('Edit budget', ent(`/billing/budgets/${r.id}/edit`))],
   ],
 };
 const filterKeys = { cc: ['state', 'types'], b: ['scope', 'sku', 'stop'] };
-const link = (r) => `https://github.com/enterprises/${encodeURIComponent(slug)}/billing/` +
-  (tab === 'cc' ? `cost_centers/${encodeURIComponent(r.id)}` : `budgets/${encodeURIComponent(r.id)}/edit`);
 
 async function fetchAll(path, key) {
   const out = [];
@@ -144,6 +194,8 @@ $('#login').onsubmit = async (e) => {
   try {
     const [cc, b] = await Promise.all([fetchAll(`${base}/cost-centers`, 'costCenters'), fetchAll(`${base}/budgets`, 'budgets')]);
     data = { cc: cc.map(ccRow), b: b.map(budgetRow) };
+    ccRes = new Map(cc.map((c) => [c.id, c.resources || []]));
+    ccByName = new Map(cc.filter((c) => c.state !== 'deleted').map((c) => [c.name, c.id]));
     $('#n-cc').textContent = data.cc.length; $('#n-b').textContent = data.b.length;
     $('#ent-name').textContent = slug; $('#ent-label').hidden = false;
     $('#login-view').hidden = true; $('#app').hidden = false; $('#q').value = ''; setTab(tab); $('#q').focus();
@@ -155,7 +207,7 @@ $('#login').onsubmit = async (e) => {
 };
 
 $('#change').onclick = () => {
-  token = null; data = { cc: [], b: [] }; $('#pat').value = '';
+  token = null; data = { cc: [], b: [] }; ccRes = new Map(); ccByName = new Map(); $('#pat').value = '';
   $('#app').hidden = true; $('#ent-label').hidden = true; $('#login-view').hidden = false; $('#pat').focus();
 };
 
@@ -180,6 +232,7 @@ function render() {
   const tr = el('tr');
   for (const [k, text, , num] of cols[tab]) {
     const th = el('th', num ? 'num' : '');
+    if (!text) { tr.append(th); continue; }
     const b = el('button', '', text + (sort === k ? (dir > 0 ? ' ↑' : ' ↓') : ''));
     b.onclick = () => { dir = sort === k ? -dir : (num ? -1 : 1); sort = k; render(); };
     th.setAttribute('aria-sort', sort === k ? (dir > 0 ? 'ascending' : 'descending') : 'none');
@@ -191,11 +244,7 @@ function render() {
     const tr = el('tr');
     cols[tab].forEach(([k, , fmt, num], i) => {
       const td = el('td', num ? 'num' : '');
-      if (i === 0) {
-        const a = el('a', 'Link--primary text-bold', r.name || '(unnamed)');
-        a.href = link(r); a.target = '_blank'; a.rel = 'noopener';
-        td.append(a);
-      } else td.append(fmt ? fmt(r) : r[k]);
+      td.append(fmt ? fmt(r) : r[k]);
       tr.append(td);
     });
     return tr;

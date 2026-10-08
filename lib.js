@@ -7,6 +7,7 @@ const ccRow = (c) => ({
   state: c.state || 'active',
   types: [...new Set((c.resources || []).map((r) => r.type))],
   resources: (c.resources || []).length,
+  members: (c.resources || []).map((r) => r.name).join(' '), // so search finds a cost center by org/team/user
   azure: c.azure_subscription || '',
 });
 

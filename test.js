@@ -3,12 +3,13 @@ const { ccRow, budgetRow, apply } = require('./lib.js');
 
 const ccs = [
   { id: '1', name: 'Business', state: 'active', resources: [{ type: 'User', name: 'a' }] },
-  { id: '2', name: '901-Devs', state: 'active', resources: [{ type: 'EnterpriseTeam', name: 't' }, { type: 'User', name: 'b' }] },
+  { id: '2', name: '901-Devs', state: 'active', resources: [{ type: 'Team', name: 'ent:quake' }, { type: 'User', name: 'b' }] },
   { id: '3', name: 'old', state: 'deleted', resources: [] },
 ].map(ccRow);
 
 assert.deepStrictEqual(apply(ccs).map((r) => r.id), ['2', '1', '3']);
 assert.deepStrictEqual(apply(ccs, { q: 'DEV' }).map((r) => r.id), ['2']);
+assert.deepStrictEqual(apply(ccs, { q: 'quake' }).map((r) => r.id), ['2']); // matches member name
 assert.deepStrictEqual(apply(ccs, { filters: { state: 'deleted' } }).map((r) => r.id), ['3']);
 assert.deepStrictEqual(apply(ccs, { filters: { types: 'User' } }).map((r) => r.id), ['2', '1']);
 assert.deepStrictEqual(apply(ccs, { sort: 'resources', dir: -1 }).map((r) => r.id), ['2', '1', '3']);

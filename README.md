@@ -8,6 +8,7 @@ Find a cost center or budget in a GitHub Enterprise without paging through 15+ p
 2. Switch between **Cost centers** and **Budgets**.
 3. Type to filter (press `/` to focus, `Esc` to clear), narrow with the dropdowns, and click column headers to sort.
 4. Click a name to open it on GitHub.
+5. Drill down: expand a cost center's **Members** to see its organizations, enterprise teams, repositories and users (all linked). On a cost center budget, click **Show members** to jump to that cost center.
 
 ## Token
 
